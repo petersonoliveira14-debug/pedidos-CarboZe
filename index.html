@@ -54,11 +54,22 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--txt);min-h
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
 }
 .header h1 span{color:var(--green);}
-.period{
-  font-size:12px;font-weight:600;color:var(--txt2);
-  background:rgba(131,206,13,.1);padding:6px 18px;border-radius:20px;
-  border:1px solid var(--border2);letter-spacing:.5px;
+.period-nav{display:flex;align-items:center;gap:6px;}
+.period-btn{
+  background:rgba(131,206,13,.08);border:1px solid var(--border2);
+  color:var(--green);border-radius:8px;width:28px;height:28px;
+  cursor:pointer;font-size:18px;display:flex;align-items:center;
+  justify-content:center;padding:0;flex-shrink:0;transition:background .15s;
 }
+.period-btn:hover{background:rgba(131,206,13,.2);}
+.period-btn:disabled{opacity:.3;cursor:default;}
+.period-sel{
+  appearance:none;-webkit-appearance:none;
+  background:rgba(131,206,13,.08);border:1px solid var(--border2);border-radius:20px;
+  color:var(--txt);font-size:12px;font-weight:600;font-family:'Barlow',sans-serif;
+  padding:5px 20px;letter-spacing:.5px;cursor:pointer;text-align:center;
+}
+.period-sel option{background:#0c4535;color:var(--txt);}
 .header-filters{display:flex;flex-wrap:wrap;gap:16px;align-items:center;}
 .filter-group{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
 .filter-group label{font-size:10px;color:var(--txt3);font-weight:700;text-transform:uppercase;letter-spacing:1px;white-space:nowrap;}
@@ -278,7 +289,13 @@ tfoot td{
       <h1><span class="gc">Grupo Carbo</span> &mdash; Dashboard de Vendas</h1>
       <span id="sync-badge" style="font-size:.75rem;color:#4d8a09;background:rgba(131,206,13,.12);padding:4px 12px;border-radius:20px;letter-spacing:.03em;margin-left:12px;"></span>
     </div>
-    <div class="period" id="period-display">Carregando...</div>
+    <div class="period-nav">
+      <button class="period-btn" id="btn-prev" onclick="navPeriod(-1)" title="Mês anterior">&#8249;</button>
+      <select class="period-sel" id="period-select" onchange="loadFromSelect()">
+        <option value="">Carregando...</option>
+      </select>
+      <button class="period-btn" id="btn-next" onclick="navPeriod(+1)" title="Próximo mês">&#8250;</button>
+    </div>
   </div>
   <div class="header-filters">
     <div class="filter-group">
@@ -827,50 +844,99 @@ function refresh() {
   renderTable(d);
 }
 
+/* ═══════════════ PERÍODO ═══════════════ */
+let HIST_MESES = [];
+const MESES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+
+function applyData(data) {
+  if (data && data.length > 0) NOTAS = data;
+  ALL_VENDS = [...new Set(NOTAS.filter(n=>n.vendedor).map(n=>n.vendedor))].sort();
+  F = {status:'todos', vendedor:'todos'};
+  buildVSelect();
+  document.querySelectorAll('.fb').forEach(b => {
+    if (b.textContent.trim() === 'Todos') b.classList.add('active');
+  });
+  refresh();
+  updateNavButtons();
+}
+
+function updateNavButtons() {
+  const sel = document.getElementById('period-select');
+  if (!sel) return;
+  const prev = document.getElementById('btn-prev');
+  const next = document.getElementById('btn-next');
+  if (prev) prev.disabled = sel.selectedIndex >= sel.options.length - 1;
+  if (next) next.disabled = sel.selectedIndex <= 0;
+}
+
+function loadPeriod(ym) {
+  const url = ym ? `data/historico/${ym}.json` : 'data/pedidos.json';
+  return fetch(url)
+    .then(r => { if(!r.ok) throw new Error('offline'); return r.json(); })
+    .then(data => { applyData(data); })
+    .catch(() => { applyData(null); });
+}
+
+function loadFromSelect() {
+  const sel = document.getElementById('period-select');
+  if (sel) loadPeriod(sel.value || null);
+  updateNavButtons();
+}
+
+function navPeriod(dir) {
+  const sel = document.getElementById('period-select');
+  if (!sel) return;
+  const newIdx = sel.selectedIndex - dir; // options sorted newest→oldest, so newer = lower idx
+  if (newIdx >= 0 && newIdx < sel.options.length) {
+    sel.selectedIndex = newIdx;
+    loadPeriod(sel.value || null);
+    updateNavButtons();
+  }
+}
+
 /* ═══════════════ INIT ═══════════════ */
 window.addEventListener('DOMContentLoaded', () => {
-  // Loading overlay
   document.body.insertAdjacentHTML('afterbegin',
     '<div id="czload" style="position:fixed;inset:0;background:#062520ee;display:flex;align-items:center;justify-content:center;z-index:9999;font-family:Barlow,sans-serif;color:#83ce0d;font-size:1.1rem;letter-spacing:.05em;">Sincronizando dados Bling...</div>');
 
-  fetch('data/pedidos.json')
-    .then(r => { if(!r.ok) throw new Error('offline'); return r.json(); })
-    .then(data => {
-      NOTAS = data;
-      ALL_VENDS = [...new Set(NOTAS.filter(n=>n.vendedor).map(n=>n.vendedor))].sort();
-      buildVSelect();
-      document.querySelectorAll('.fb').forEach(b => {
-        if (b.textContent.trim() === 'Todos') b.classList.add('active');
-      });
-      refresh();
-      document.getElementById('czload').remove();
-      return fetch('data/meta.json').then(r=>r.json());
-    })
-    .then(meta => {
-      const badge = document.getElementById('sync-badge');
-      const period = document.getElementById('period-display');
-      if (badge) {
-        const total = meta.total || 0;
-        badge.textContent = total > 0
-          ? '⚡ Sync: ' + meta.ultima_atualizacao + ' · ' + total + ' NFs'
-          : '⏰ Sync: ' + meta.ultima_atualizacao;
+  // 1. Carrega badge de sync (meta.json) em paralelo
+  fetch('data/meta.json').then(r=>r.json()).then(meta => {
+    const badge = document.getElementById('sync-badge');
+    if (badge) {
+      badge.textContent = (meta.total > 0 ? '⚡ Sync: ' : '⏰ Sync: ') + meta.ultima_atualizacao;
+    }
+  }).catch(()=>{});
+
+  // 2. Carrega índice histórico e popula seletor
+  fetch('data/historico/index.json')
+    .then(r => { if(!r.ok) throw new Error('no-hist'); return r.json(); })
+    .then(idx => {
+      HIST_MESES = idx.meses || [];
+      const sel = document.getElementById('period-select');
+      if (sel && HIST_MESES.length > 0) {
+        sel.innerHTML = HIST_MESES.map(ym => {
+          const [y, m] = ym.split('-');
+          return `<option value="${ym}">${MESES_PT[+m-1]} ${y}</option>`;
+        }).join('');
+        const atual = idx.atual || HIST_MESES[0];
+        sel.value = atual;
       }
-      if (period && meta.periodo) period.textContent = meta.periodo;
+      return idx.atual || HIST_MESES[0] || null;
     })
+    .then(ym => loadPeriod(ym))
+    .then(() => { const ld = document.getElementById('czload'); if(ld) ld.remove(); })
     .catch(() => {
-      // fallback: dados hardcoded ainda funcionam
-      ALL_VENDS = [...new Set(NOTAS.filter(n=>n.vendedor).map(n=>n.vendedor))].sort();
-      buildVSelect();
-      document.querySelectorAll('.fb').forEach(b => {
-        if (b.textContent.trim() === 'Todos') b.classList.add('active');
-      });
-      refresh();
+      // Sem histórico ainda — carrega pedidos.json direto
+      fetch('data/pedidos.json')
+        .then(r => { if(!r.ok) throw new Error('offline'); return r.json(); })
+        .then(data => { applyData(data); })
+        .catch(() => { applyData(null); });
+      fetch('data/meta.json').then(r=>r.json()).then(meta => {
+        const sel = document.getElementById('period-select');
+        if (sel && meta.periodo) sel.innerHTML = `<option value="">${meta.periodo}</option>`;
+      }).catch(()=>{});
       const ld = document.getElementById('czload');
-      if (ld) ld.remove();
-      const badge = document.getElementById('sync-badge');
-      if (badge) badge.textContent = '⚠ Dados locais';
-      const period = document.getElementById('period-display');
-      if (period) period.textContent = 'Fev 2026';
+      if(ld) ld.remove();
     });
 });
 </script>

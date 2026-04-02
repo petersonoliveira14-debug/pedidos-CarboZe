@@ -119,6 +119,7 @@ if __name__ == "__main__":
 
     notas  = [transform(p) for p in pedidos]
     periodo_str = f"{MESES_PT[periodo_dt.month]} {periodo_dt.year}"
+    ym = periodo_dt.strftime("%Y-%m")
 
     os.makedirs("data", exist_ok=True)
     with open("data/pedidos.json", "w", encoding="utf-8") as f:
@@ -132,6 +133,25 @@ if __name__ == "__main__":
     with open("data/meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
+    # ── Histórico mensal ──────────────────────────────────────────────────
+    hist_dir = "data/historico"
+    os.makedirs(hist_dir, exist_ok=True)
+
+    with open(f"{hist_dir}/{ym}.json", "w", encoding="utf-8") as f:
+        json.dump(notas, f, ensure_ascii=False, indent=2)
+
+    index_path = f"{hist_dir}/index.json"
+    meses_existentes = []
+    if os.path.exists(index_path):
+        with open(index_path, encoding="utf-8") as f:
+            meses_existentes = json.load(f).get("meses", [])
+    if ym not in meses_existentes:
+        meses_existentes.append(ym)
+        meses_existentes.sort(reverse=True)
+    with open(index_path, "w", encoding="utf-8") as f:
+        json.dump({"meses": meses_existentes, "atual": ym}, f, ensure_ascii=False)
+    # ─────────────────────────────────────────────────────────────────────
+
     cz = sum(1 for n in notas if n["marca"] == "carbozé")
     cp = sum(1 for n in notas if n["marca"] == "carbopro")
-    print(f"OK — {len(notas)} NFs salvas | {periodo_str} | CarboZé: {cz} | CarboPro: {cp}")
+    print(f"OK — {len(notas)} NFs | {periodo_str} | CarboZé: {cz} | CarboPro: {cp} | Histórico: {meses_existentes}")
