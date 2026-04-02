@@ -8,7 +8,7 @@ BASE          = "https://www.bling.com.br/Api/v3"
 REPO          = "petersonoliveira14-debug/pedidos-ProdutosCarbo"
 
 # Quantos meses para trás buscar (além do atual)
-MESES_ATRAS = int(os.environ.get("BLING_MESES_ATRAS", "6"))
+MESES_ATRAS = int(os.environ.get("BLING_MESES_ATRAS", "12"))
 
 MESES_PT = {
     1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",
@@ -109,13 +109,20 @@ def transform(pedido):
     # Número da NF (nota fiscal) pode estar separado do número do pedido
     numero_nf = pedido.get("numeroLoja", "") or pedido.get("numero", "")
 
+    valor = float(pedido.get("totalProdutos", 0) or 0)
+
+    # Fallback: estimar qtd pelo valor quando itens não retornam quantidade
+    if qtd == 0 and valor > 0:
+        preco_unit = 112.0 if produto == '1l' else 13.0
+        qtd = max(1, round(valor / preco_unit))
+
     return {
         "nf":       numero_nf,
         "data":     data_fmt,
         "sem":      sem,
         "cliente":  contato.get("nome", "") or "",
         "status":   status,
-        "valor":    float(pedido.get("totalProdutos", 0) or 0),
+        "valor":    valor,
         "produto":  produto,
         "qtd":      qtd,
         "vendedor": (vendedor.get("nome") or "").strip() or None,

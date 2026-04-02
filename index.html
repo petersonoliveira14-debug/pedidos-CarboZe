@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dashboard Grupo Carbo — Vendas</title>
+<link rel="icon" type="image/png" href="favicon.png">
 <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
@@ -98,6 +99,16 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--txt);min-h
   padding:7px 14px;border-radius:20px;cursor:pointer;transition:all .2s;white-space:nowrap;
 }
 .btn-admin:hover{background:rgba(75,78,232,.25);border-color:var(--gc-blue);color:#c7d2fe;}
+.btn-sync{
+  display:flex;align-items:center;gap:6px;
+  background:rgba(39,194,78,.12);border:1.5px solid rgba(39,194,78,.4);
+  color:#86efac;font-size:11px;font-weight:700;font-family:'Barlow',sans-serif;
+  padding:7px 14px;border-radius:20px;cursor:pointer;transition:all .2s;white-space:nowrap;
+}
+.btn-sync:hover{background:rgba(39,194,78,.25);border-color:var(--gc-green);color:#bbf7d0;}
+.btn-sync:disabled{opacity:.5;cursor:not-allowed;}
+.btn-sync .spin{display:inline-block;animation:spin 1s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
 
 /* ── Filter Bar ──────────────────────────────────────── */
 .header-filters{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;}
@@ -408,6 +419,7 @@ tfoot td{padding:10px 10px;font-weight:700;color:var(--green);border-top:2px sol
         </div>
         <button class="period-btn" id="btn-next" onclick="navPeriod(+1)" title="Próximo mês">&#8250;</button>
       </div>
+      <button class="btn-sync" id="btn-sync" onclick="triggerSync()" title="Sincronizar dados com Bling">&#x21bb; Sync</button>
       <button class="btn-admin" onclick="openAdmin()">⚙ Admin</button>
     </div>
   </div>
@@ -1155,6 +1167,13 @@ const MESES_PT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','N
 
 function applyData(data) {
   if (data && data.length > 0) NOTAS = data;
+  // Fallback: estimar qtd pelo valor quando API nao retornou itens
+  NOTAS.forEach(n=>{
+    if ((!n.qtd || n.qtd===0) && n.valor > 0) {
+      const pu = (n.produto==='1l') ? 112 : 13;
+      n.qtd = Math.max(1, Math.round(n.valor / pu));
+    }
+  });
   applyVendorOverrides();
   buildSems(NOTAS);
   ALL_VENDS = [...new Set(NOTAS.filter(n=>n.vendedor).map(n=>n.vendedor))].sort();
@@ -1179,11 +1198,21 @@ function updateNavButtons() {
 }
 
 function loadPeriod(ym) {
+  if (ym === 'todos') return loadAllPeriods();
   const url = ym ? `data/historico/${ym}.json` : 'data/pedidos.json';
   return fetch(url)
     .then(r=>{ if(!r.ok) throw new Error('offline'); return r.json(); })
     .then(data=>{ applyData(data); })
     .catch(()=>{ applyData(null); });
+}
+function loadAllPeriods() {
+  const fetches = HIST_MESES.map(ym =>
+    fetch(`data/historico/${ym}.json`).then(r=>r.ok?r.json():[]).catch(()=>[])
+  );
+  return Promise.all(fetches).then(arrays=>{
+    const all = arrays.flat();
+    applyData(all);
+  });
 }
 
 function loadFromSelect() {
@@ -1207,6 +1236,7 @@ function navPeriod(dir) {
 
 function updatePeriodBtn(ym) {
   if (!ym) return;
+  if (ym === 'todos') { g('period-cur').textContent = 'Todos os meses'; return; }
   const [y, m] = ym.split('-');
   g('period-cur').textContent = `${MESES_PT[+m-1]} ${y}`;
 }
@@ -1240,7 +1270,8 @@ function renderMonthPicker() {
   g('mp-year-lbl').textContent = MP_YEAR;
   const sel = g('period-select');
   const curVal = sel ? sel.value : '';
-  g('mp-grid').innerHTML = MESES_PT.map((m,i)=>{
+  const allBtn = `<button class="mp-m${curVal==='todos'?' active':''}" onclick="selectMonth('todos')" style="grid-column:1/-1;font-weight:800;">Todos os meses</button>`;
+  g('mp-grid').innerHTML = allBtn + MESES_PT.map((m,i)=>{
     const ym = `${MP_YEAR}-${String(i+1).padStart(2,'0')}`;
     const hasData = HIST_MESES.includes(ym);
     const isCur = ym === curVal;
@@ -1321,11 +1352,12 @@ function renderAdmVendList() {
   g('adm-vend-list').innerHTML = `
     <datalist id="adm-vend-dl">${dlOpts}</datalist>
     <table class="adm-table">
-      <thead><tr><th>Pedido</th><th>Data</th><th>Cliente</th><th>Vendedor</th></tr></thead>
+      <thead><tr><th>NF</th><th>Pedido</th><th>Data</th><th>Cliente</th><th>Vendedor</th></tr></thead>
       <tbody>${NOTAS.map(n=>{
         const hasOv = overrides[n.nf] !== undefined;
         const cur = hasOv ? (overrides[n.nf]||'') : (n.vendedor||'');
         return `<tr class="${hasOv?'ov':''}">
+          <td>${n.nf}</td>
           <td>#${n.nf}</td>
           <td>${n.data}</td>
           <td title="${n.cliente}">${n.cliente.length>25?n.cliente.substring(0,25)+'…':n.cliente}</td>
@@ -1383,6 +1415,29 @@ function admPublishVendedores(overrides, pat) {
     setTimeout(()=>{ msg.style.color=''; }, 5000);
   });
 }
+function triggerSync() {
+  const pat = localStorage.getItem('gh_pat');
+  if (!pat) { alert('Configure o Token GitHub na aba Admin > Senha primeiro.'); return; }
+  const btn = g('btn-sync');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin">&#x21bb;</span> Sincronizando...';
+  const REPO = 'petersonoliveira14-debug/pedidos-ProdutosCarbo';
+  fetch(`https://api.github.com/repos/${REPO}/actions/workflows/deploy.yml/dispatches`, {
+    method: 'POST',
+    headers: {'Authorization': `Bearer ${pat}`, 'Accept': 'application/vnd.github.v3+json', 'Content-Type': 'application/json'},
+    body: JSON.stringify({ ref: 'main' })
+  })
+  .then(r => {
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    btn.innerHTML = '&#x2713; Sync iniciado!';
+    setTimeout(()=>{ btn.disabled=false; btn.innerHTML='&#x21bb; Sync'; }, 5000);
+  })
+  .catch(err => {
+    btn.innerHTML = '&#x21bb; Sync';
+    btn.disabled = false;
+    alert('Erro ao disparar sync: ' + err.message);
+  });
+}
 function admClearOverrides() {
   if (!confirm('Remover todas as atribuições manuais de vendedores?')) return;
   localStorage.removeItem(VEND_OV_KEY);
@@ -1428,15 +1483,14 @@ window.addEventListener('DOMContentLoaded', () => {
       HIST_MESES = idx.meses || [];
       const sel = g('period-select');
       if (sel && HIST_MESES.length > 0) {
-        sel.innerHTML = HIST_MESES.map(ym=>{
+        sel.innerHTML = '<option value="todos">Todos</option>' + HIST_MESES.map(ym=>{
           const [y,m] = ym.split('-');
           return `<option value="${ym}">${MESES_PT[+m-1]} ${y}</option>`;
         }).join('');
-        const atual = idx.atual || HIST_MESES[0];
-        sel.value = atual;
-        updatePeriodBtn(atual);
+        sel.value = 'todos';
+        updatePeriodBtn('todos');
       }
-      return idx.atual || HIST_MESES[0] || null;
+      return 'todos';
     })
     .then(ym=>loadPeriod(ym))
     .then(()=>{ const ld=g('czload'); if(ld) ld.remove(); })
