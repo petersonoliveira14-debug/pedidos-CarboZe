@@ -92,7 +92,7 @@ def transform(pedido):
         "valor":   float(pedido.get("totalProdutos", 0)),
         "produto": produto,
         "qtd":     int(qtd),
-        "vendedor": vendedor.get("nome") if vendedor else None,
+        "vendedor": (vendedor.get("nome") or "").strip() or None,
         "marca":   marca
     }
 
