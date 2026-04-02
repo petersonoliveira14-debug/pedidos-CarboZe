@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Dashboard CarboZé — Fevereiro 2026</title>
+<title>Dashboard Grupo Carbo — Vendas</title>
 <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400&family=Barlow+Condensed:wght@700;800;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
@@ -24,6 +24,9 @@
   --amber:    #f59e0b;
   --blue:     #3b82f6;
   --white:    #ffffff;
+  /* Grupo Carbo brand */
+  --gc-blue:  #4B4EE8;
+  --gc-green: #27C24E;
 }
 *{margin:0;padding:0;box-sizing:border-box;}
 body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;}
@@ -32,18 +35,24 @@ body{font-family:'Barlow',sans-serif;background:var(--bg);color:var(--txt);min-h
 .header{
   background:var(--bg2);
   padding:20px 40px 18px;
-  border-bottom:3px solid var(--green);
+  border-bottom:3px solid;
+  border-image:linear-gradient(90deg,var(--gc-blue),var(--gc-green),var(--green)) 1;
   box-shadow:0 4px 24px rgba(0,0,0,.4);
 }
 .header-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
 .logo-area{display:flex;align-items:center;gap:16px;}
 .logo-icon{
-  width:44px;height:44px;border-radius:10px;
-  background:var(--green);display:flex;align-items:center;justify-content:center;
-  font-weight:900;font-size:18px;color:#062520;font-family:'Barlow Condensed',sans-serif;
-  letter-spacing:-1px;flex-shrink:0;
+  width:48px;height:48px;border-radius:10px;
+  background:linear-gradient(135deg,var(--gc-blue),var(--gc-green));
+  display:flex;align-items:center;justify-content:center;
+  font-weight:900;font-size:15px;color:#fff;font-family:'Barlow Condensed',sans-serif;
+  letter-spacing:-.5px;flex-shrink:0;
 }
-.header h1{font-size:24px;font-weight:800;color:var(--white);letter-spacing:-.3px;}
+.header h1{font-size:22px;font-weight:800;color:var(--white);letter-spacing:-.3px;}
+.header h1 .gc{
+  background:linear-gradient(90deg,var(--gc-blue),var(--gc-green));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
 .header h1 span{color:var(--green);}
 .period{
   font-size:12px;font-weight:600;color:var(--txt2);
@@ -265,11 +274,11 @@ tfoot td{
 <div class="header">
   <div class="header-top">
     <div class="logo-area">
-      <div class="logo-icon">CZ</div>
-      <h1><span>CarboZé</span> &mdash; Dashboard Financeiro</h1>
-  <span id="sync-badge" style="font-size:.75rem;color:#4d8a09;background:rgba(131,206,13,.12);padding:4px 12px;border-radius:20px;letter-spacing:.03em;">Carregando...</span>
+      <div class="logo-icon">GC</div>
+      <h1><span class="gc">Grupo Carbo</span> &mdash; Dashboard de Vendas</h1>
+      <span id="sync-badge" style="font-size:.75rem;color:#4d8a09;background:rgba(131,206,13,.12);padding:4px 12px;border-radius:20px;letter-spacing:.03em;margin-left:12px;"></span>
     </div>
-    <div class="period">Fevereiro 2026</div>
+    <div class="period" id="period-display">Carregando...</div>
   </div>
   <div class="header-filters">
     <div class="filter-group">
@@ -424,7 +433,7 @@ tfoot td{
   </div>
 
   <div class="footer">
-    Dashboard gerado automaticamente &mdash; <strong>CarboZé</strong> &middot; CARBO SOLUÇÕES LTDA &middot; Fevereiro 2026
+    Dashboard gerado automaticamente &mdash; <strong>Grupo Carbo</strong> &middot; CARBO SOLUÇÕES LTDA &middot; CarboZé &middot; CarboPro
   </div>
 </div>
 
@@ -838,8 +847,15 @@ window.addEventListener('DOMContentLoaded', () => {
       return fetch('data/meta.json').then(r=>r.json());
     })
     .then(meta => {
-      const el = document.getElementById('sync-badge');
-      if (el) el.textContent = '⚡ Atualizado: ' + meta.ultima_atualizacao + ' • ' + meta.total + ' pedidos';
+      const badge = document.getElementById('sync-badge');
+      const period = document.getElementById('period-display');
+      if (badge) {
+        const total = meta.total || 0;
+        badge.textContent = total > 0
+          ? '⚡ Sync: ' + meta.ultima_atualizacao + ' · ' + total + ' NFs'
+          : '⏰ Sync: ' + meta.ultima_atualizacao;
+      }
+      if (period && meta.periodo) period.textContent = meta.periodo;
     })
     .catch(() => {
       // fallback: dados hardcoded ainda funcionam
@@ -851,11 +867,11 @@ window.addEventListener('DOMContentLoaded', () => {
       refresh();
       const ld = document.getElementById('czload');
       if (ld) ld.remove();
-      const el = document.getElementById('sync-badge');
-      if (el) el.textContent = '⚠ Dados locais (sem conexao Bling)';
+      const badge = document.getElementById('sync-badge');
+      if (badge) badge.textContent = '⚠ Dados locais';
+      const period = document.getElementById('period-display');
+      if (period) period.textContent = 'Fev 2026';
     });
-});
-  refresh();
 });
 </script>
 </body>

@@ -1,11 +1,16 @@
 import os, json, requests, base64, subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 
 CLIENT_ID     = os.environ["BLING_CLIENT_ID"]
 CLIENT_SECRET = os.environ["BLING_CLIENT_SECRET"]
 REFRESH_TOKEN = os.environ["BLING_REFRESH_TOKEN"]
 BASE          = "https://www.bling.com.br/Api/v3"
 REPO          = "petersonoliveira14-debug/pedidos-ProdutosCarbo"
+
+MESES_PT = {
+    1:"Janeiro",2:"Fevereiro",3:"Março",4:"Abril",5:"Maio",6:"Junho",
+    7:"Julho",8:"Agosto",9:"Setembro",10:"Outubro",11:"Novembro",12:"Dezembro"
+}
 
 def get_token():
     cred = base64.b64encode(f"{CLIENT_ID}:{CLIENT_SECRET}".encode()).decode()
@@ -17,7 +22,6 @@ def get_token():
         print(f"Auth erro {r.status_code}: {r.text}")
         r.raise_for_status()
     data = r.json()
-    # Salvar novo refresh_token se rotacionado
     new_rt = data.get("refresh_token")
     if new_rt and new_rt != REFRESH_TOKEN:
         print("Refresh token rotacionado — atualizando Secret...")
@@ -45,6 +49,14 @@ def get_pedidos(token, data_ini, data_fim):
         page += 1
     return pedidos
 
+def detect_marca(itens):
+    """Detecta a marca pelo nome dos produtos nos itens da NF."""
+    for item in itens:
+        desc = (item.get("descricao", "") or "").lower()
+        if any(x in desc for x in ["carbopro", "carbo pro", "carbovapt", "carbo vapt", "vapt"]):
+            return "carbopro"
+    return "carbozé"
+
 def transform(pedido):
     data_raw = pedido.get("data", "")
     try:
@@ -57,6 +69,8 @@ def transform(pedido):
     contato  = pedido.get("contato", {})
     vendedor = pedido.get("vendedor", {})
     itens    = pedido.get("itens", [])
+
+    marca = detect_marca(itens)
 
     produto, qtd = "100ml", 0
     for item in itens:
@@ -78,21 +92,46 @@ def transform(pedido):
         "valor":   float(pedido.get("totalProdutos", 0)),
         "produto": produto,
         "qtd":     int(qtd),
-        "vendedor": vendedor.get("nome") if vendedor else None
+        "vendedor": vendedor.get("nome") if vendedor else None,
+        "marca":   marca
     }
 
 if __name__ == "__main__":
     hoje = datetime.today()
-    ini  = hoje.replace(day=1).strftime("%Y-%m-%d")
-    fim  = hoje.strftime("%Y-%m-%d")
+
+    # Tenta mês atual
+    ini = hoje.replace(day=1).strftime("%Y-%m-%d")
+    fim = hoje.strftime("%Y-%m-%d")
     print(f"Buscando pedidos de {ini} a {fim}...")
     token   = get_token()
     pedidos = get_pedidos(token, ini, fim)
-    notas   = [transform(p) for p in pedidos]
+
+    # Fallback: se não houver dados no mês atual, busca mês anterior
+    periodo_dt = hoje
+    if not pedidos:
+        primeiro_atual   = hoje.replace(day=1)
+        ultimo_anterior  = primeiro_atual - timedelta(days=1)
+        ini = ultimo_anterior.replace(day=1).strftime("%Y-%m-%d")
+        fim = ultimo_anterior.strftime("%Y-%m-%d")
+        periodo_dt = ultimo_anterior
+        print(f"Nenhum pedido em {MESES_PT[hoje.month]}/{hoje.year} — buscando {MESES_PT[ultimo_anterior.month]}/{ultimo_anterior.year}...")
+        pedidos = get_pedidos(token, ini, fim)
+
+    notas  = [transform(p) for p in pedidos]
+    periodo_str = f"{MESES_PT[periodo_dt.month]} {periodo_dt.year}"
+
     os.makedirs("data", exist_ok=True)
     with open("data/pedidos.json", "w", encoding="utf-8") as f:
         json.dump(notas, f, ensure_ascii=False, indent=2)
-    meta = {"ultima_atualizacao": datetime.now().strftime("%d/%m/%Y %H:%M"), "total": len(notas)}
+
+    meta = {
+        "ultima_atualizacao": datetime.now().strftime("%d/%m/%Y %H:%M"),
+        "total":   len(notas),
+        "periodo": periodo_str
+    }
     with open("data/meta.json", "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
-    print(f"OK — {len(notas)} pedidos salvos.")
+
+    cz = sum(1 for n in notas if n["marca"] == "carbozé")
+    cp = sum(1 for n in notas if n["marca"] == "carbopro")
+    print(f"OK — {len(notas)} NFs salvas | {periodo_str} | CarboZé: {cz} | CarboPro: {cp}")
